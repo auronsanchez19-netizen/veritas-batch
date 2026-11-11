@@ -1,0 +1,42 @@
+name: ais
+
+# Sondeo AIS desde IP propia. Existe porque Render comparte IP de salida y
+# aisstream limita a 3 conexiones por IP: desde allí el handshake se rechaza.
+#
+# Sin secretos en la carga ni en artefactos: la clave de aisstream y el secreto
+# del ingest viven en Actions secrets y el resultado se envía por HTTPS a
+# Véritas. Este repo es público; aquí sólo hay código.
+
+on:
+  workflow_dispatch: {}
+  schedule:
+    # Cada 15 min: la tool descarta la foto si tiene más de 20.
+    - cron: '*/15 * * * *'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ais-poll
+  cancel-in-progress: false
+
+jobs:
+  poll:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.13'
+
+      - name: Instalar cliente WebSocket
+        run: python3 -m pip install --quiet "websockets==13.1"
+
+      - name: Sondear y publicar la instantánea
+        env:
+          AISSTREAM_API_KEY: ${{ secrets.AISSTREAM_API_KEY }}
+          AIS_INGEST_URL: ${{ secrets.AIS_INGEST_URL }}
+          AIS_INGEST_SECRET: ${{ secrets.AIS_INGEST_SECRET }}
+        run: python3 scripts/ais_poll.py
