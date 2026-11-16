@@ -41,3 +41,47 @@ class MediaScriptTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DownloadTest(unittest.TestCase):
+    """Descarga real contra un servidor local, saltándose sólo el guardián de red."""
+
+    def setUp(self):
+        import functools
+        import http.server
+        import threading
+        import tempfile
+        self.dir = tempfile.mkdtemp()
+        os.makedirs(os.path.join(self.dir, 'www'), exist_ok=True)
+        with open(os.path.join(self.dir, 'www', 'a.wav'), 'wb') as handle:
+            handle.write(b'RIFF' + b'\x00' * 4096)
+        handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=os.path.join(self.dir, 'www'))
+        self.server = http.server.ThreadingHTTPServer(('127.0.0.1', 0), handler)
+        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        self.thread.start()
+        self.url = f'http://127.0.0.1:{self.server.server_address[1]}/a.wav'
+
+    def tearDown(self):
+        self.server.shutdown()
+        self.server.server_close()
+
+    def test_descarga_escribe_el_archivo(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location('media', SCRIPT)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        module.check_url = lambda url: url  # sólo para el test: el servidor es local
+        local = module.download(self.url, self.dir)
+        with open(local, 'rb') as handle:
+            self.assertEqual(handle.read(4), b'RIFF')
+        module.check_url = None
+
+    def test_404_da_mensaje_sin_url(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location('media2', SCRIPT)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        module.check_url = lambda url: url
+        with self.assertRaises(SystemExit) as ctx:
+            module.download(self.url.replace('a.wav', 'no-existe.wav'), self.dir)
+        self.assertEqual(ctx.exception.code, 3)

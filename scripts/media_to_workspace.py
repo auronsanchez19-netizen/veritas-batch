@@ -75,8 +75,6 @@ def check_url(url: str) -> str:
 
 def download(url: str, directory: str) -> str:
     check_url(url)
-    suffix = os.path.splitext(urllib.parse.urlparse(url).path)[1] or ".bin"
-    local = os.path.join(directory, f"input{suffix}")
     try:
         return _fetch(url, directory)
     except urllib.error.HTTPError as error:
@@ -93,6 +91,8 @@ USER_AGENT = "VeritasBatch/1.0 (+https://github.com/auronsanchez19-netizen/verit
 def _fetch(url: str, directory: str) -> str:
     # Cloudflare (error 1010) bloquea el User-Agent por defecto de urllib: se
     # identifica el runner con un UA propio y estable.
+    suffix = os.path.splitext(urllib.parse.urlparse(url).path)[1] or ".bin"
+    local = os.path.join(directory, f"input{suffix}")
     request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, "Accept": "*/*"})
     with urllib.request.urlopen(request, timeout=120) as response:
         length = int(response.headers.get("Content-Length") or 0)
