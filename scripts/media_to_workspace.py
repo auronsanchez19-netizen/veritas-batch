@@ -179,8 +179,13 @@ def main() -> int:
             source = local if job == "audio" else to_audio(local, directory)
             text, note = transcribe(source, model_name, language)
         if not text.strip():
-            print("media: la extracción no produjo texto", file=sys.stderr)
-            return 3
+            # Un vídeo sin voz (o un audio en silencio) NO es un fallo del carril:
+            # medido el 2026-11-16 con un vídeo de 11 MB de tono puro, el job
+            # terminaba en exit 3 y el usuario no sabía nada. Se devuelve el
+            # resultado con la nota real; el archivo .texto.txt lo explica.
+            print("media: la extracción no produjo texto; se devuelve la nota", file=sys.stderr)
+            text = "(sin voz detectada en el archivo)"
+            note = f"{note}; no se detectaron segmentos de voz" if note else "no se detectaron segmentos de voz"
         deliver(result_url, {
             "userId": user_id, "filename": filename, "job": job,
             "text": text, "note": note,

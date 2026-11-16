@@ -9,6 +9,15 @@ import unittest
 SCRIPT = os.path.join(os.path.dirname(__file__), "..", "scripts", "media_to_workspace.py")
 
 
+def load_module(name: str):
+    """Módulo fresco desde el archivo: cada test parchea el suyo, sin fugas."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(name, SCRIPT)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def run(env: dict) -> subprocess.CompletedProcess:
     base = {k: v for k, v in os.environ.items() if k not in ("MEDIA_URL", "RESULT_URL", "USER_ID", "JOB", "FILENAME")}
     base.update(env)
@@ -113,20 +122,45 @@ class FullRunTest(unittest.TestCase):
         self.assertEqual(payload['userId'], 'u-1')
         self.assertIn('7.0 s', payload['note'])
 
-    def test_sin_texto_no_devuelve_nada_y_sale_con_3(self):
-        import importlib.util
-        spec = importlib.util.spec_from_file_location('media_vacio', SCRIPT)
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
+    def test_sin_texto_devuelve_la_nota_y_sale_con_0(self):
+        """Un archivo sin voz no es un fallo del carril.
+
+        Antes salía con código 3 y no devolvía nada: el 2026-11-16, con un vídeo
+        de 11 MB de tono puro, el run de Actions terminó en `failure` y el
+        usuario no supo por qué. Lo correcto es entregar la nota real.
+        """
+        module = load_module('media_vacio')
         module.check_url = lambda url: url
+        module.download = lambda url, directory: os.path.join(directory, 'a.wav')
         module.transcribe = lambda path, model, language: ('   ', 'idioma es (0.10), 1.0 s de audio')
 
         os.environ.update({'MEDIA_URL': f'{self.base}/a.wav', 'RESULT_URL': f'{self.base}/result',
                            'USER_ID': 'u-1', 'JOB': 'audio', 'FILENAME': 'a.wav'})
         codigo = module.main()
 
-        self.assertEqual(codigo, 3)
-        self.assertEqual(self.recibido, [], 'un texto vacío no debe guardarse como si fuera una transcripción')
+        self.assertEqual(codigo, 0)
+        self.assertEqual(len(self.recibido), 1, 'se entrega el resultado, no se calla')
+        payload = json.loads(self.recibido[0])
+        self.assertEqual(payload['text'], '(sin voz detectada en el archivo)')
+        self.assertIn('no se detectaron segmentos de voz', payload['note'])
+        self.assertIn('1.0 s', payload['note'])
+
+    def test_video_con_voz_sigue_entregando_el_texto(self):
+        """El arreglo no cambia el camino feliz."""
+        module = load_module('media_con_voz')
+        module.check_url = lambda url: url
+        module.download = lambda url, directory: os.path.join(directory, 'v.mp4')
+        module.to_audio = lambda local, directory: os.path.join(directory, 'a.wav')
+        module.transcribe = lambda source, model, language: ('hola mundo', 'idioma es (0.99), 9.0 s')
+
+        os.environ.update({'MEDIA_URL': f'{self.base}/v.mp4', 'RESULT_URL': f'{self.base}/result',
+                           'USER_ID': 'u-1', 'JOB': 'video', 'FILENAME': 'v.mp4'})
+        codigo = module.main()
+
+        self.assertEqual(codigo, 0)
+        payload = json.loads(self.recibido[0])
+        self.assertEqual(payload['text'], 'hola mundo')
+        self.assertEqual(payload['job'], 'video')
 
 
 if __name__ == "__main__":
