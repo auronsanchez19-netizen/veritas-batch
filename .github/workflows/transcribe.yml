@@ -35,7 +35,7 @@ jobs:
 
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
-          python-version: '3.13'
+          python-version: '3.12'
 
       - name: Dependencias
         run: |
@@ -43,6 +43,8 @@ jobs:
           # `requests`: faster-whisper lo importa para bajar el modelo.
           # `av` 14: faster-whisper llama av.open(..., metadata_errors="ignore") y
           # esa opción no existe en las versiones antiguas que resuelve pip solo.
+          # Python 3.12: PyAV 14 publica ruedas para 3.12 y no para 3.13, y sin
+          # rueda intenta compilar contra las cabeceras de ffmpeg y falla.
           python3 -m pip install faster-whisper==1.2.0 requests==2.32.3 av==14.4.0
           sudo apt-get update -qq
           sudo apt-get install -y -qq ffmpeg
