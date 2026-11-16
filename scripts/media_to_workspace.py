@@ -42,6 +42,7 @@ import socket
 import subprocess
 import sys
 import tempfile
+import urllib.error
 import urllib.parse
 import urllib.request
 
@@ -76,6 +77,17 @@ def download(url: str, directory: str) -> str:
     check_url(url)
     suffix = os.path.splitext(urllib.parse.urlparse(url).path)[1] or ".bin"
     local = os.path.join(directory, f"input{suffix}")
+    try:
+        return _fetch(url, directory)
+    except urllib.error.HTTPError as error:
+        # Se dice el host, el código y el cuerpo del error (el Worker devuelve un
+        # motivo corto). NUNCA la URL completa: lleva el token de descarga.
+        host = urllib.parse.urlparse(url).hostname
+        detail = error.read(200).decode(errors="replace").strip()
+        die(f"media: la descarga falló en {host} con HTTP {error.code}: {detail}", 3)
+
+
+def _fetch(url: str, directory: str) -> str:
     with urllib.request.urlopen(url, timeout=120) as response:
         length = int(response.headers.get("Content-Length") or 0)
         if length > MAX_BYTES:
