@@ -1,10 +1,14 @@
 name: transcribe
 
-# Transcripción con faster-whisper. Aquí sí hay RAM para un modelo mediano:
-# 16 GB frente a los 512 MB de Sandboxd/Faable/Apply.Build, donde no cabe.
+# Transcribe audio o el audio de un vídeo en un runner de 16 GB y devuelve el
+# texto al Worker.
 #
-# El audio entra por URL pública y el resultado sale como artefacto. El repo es
-# público: NO pasar material sensible por esta vía.
+# NO sube artefactos con material del usuario: este repo es público y un
+# artefacto lo puede descargar cualquiera con una cuenta de GitHub. El texto sale
+# por POST firmado al endpoint interno (`/internal/workspace/result`) y el Worker
+# lo guarda como archivo del workspace del dueño.
+#
+# El enlace de descarga es firmado, caduca en minutos y sirve una sola vez.
 
 on:
   workflow_dispatch: {}
@@ -38,18 +42,20 @@ jobs:
         run: |
           python3 -m pip install --upgrade pip
           python3 -m pip install faster-whisper==1.2.0
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
 
-      - name: Transcribir
+      - name: Transcribir y devolver el texto
         env:
-          AUDIO_URL: ${{ github.event.client_payload.body.audio_url }}
+          MEDIA_URL: ${{ github.event.client_payload.body.audio_url }}
+          RESULT_URL: ${{ github.event.client_payload.body.result_url }}
+          JOB: ${{ github.event.client_payload.body.job }}
+          FILENAME: ${{ github.event.client_payload.body.filename }}
+          USER_ID: ${{ github.event.client_payload.body.user_id }}
           MODEL: ${{ github.event.client_payload.body.model }}
           LANGUAGE: ${{ github.event.client_payload.body.language }}
-        run: python3 scripts/transcribe.py
+        run: python3 scripts/media_to_workspace.py
 
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - name: Limpiar restos
         if: always()
-        with:
-          name: transcription
-          path: out/
-          if-no-files-found: warn
-          retention-days: 7
+        run: rm -rf /tmp/veritas-media-*

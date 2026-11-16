@@ -35,14 +35,32 @@ jobs:
           python3 -m pip install --upgrade pip
           python3 -m pip install docling==2.68.0
 
-      - name: Convertir
+      # Dos caminos: por URL pública (comportamiento de siempre, con artefacto) o
+      # desde un archivo del workspace (devuelve el texto y NO sube artefacto,
+      # porque este repo es público y el material es del usuario).
+      - name: Convertir desde el workspace
+        if: ${{ github.event.client_payload.body.result_url != '' }}
+        env:
+          MEDIA_URL: ${{ github.event.client_payload.body.document_url }}
+          RESULT_URL: ${{ github.event.client_payload.body.result_url }}
+          JOB: documents
+          FILENAME: ${{ github.event.client_payload.body.filename }}
+          USER_ID: ${{ github.event.client_payload.body.user_id }}
+        run: python3 scripts/media_to_workspace.py
+
+      - name: Convertir por URL pública
+        if: ${{ github.event.client_payload.body.result_url == '' }}
         env:
           DOCUMENT_URL: ${{ github.event.client_payload.body.document_url }}
           TOOL: ${{ github.event.client_payload.body.tool }}
         run: python3 scripts/parse_document.py
 
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - name: Limpiar restos
         if: always()
+        run: rm -rf /tmp/veritas-media-*
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: ${{ always() && github.event.client_payload.body.result_url == '' }}
         with:
           name: document
           path: out/
