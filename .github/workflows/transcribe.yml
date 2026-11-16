@@ -40,9 +40,10 @@ jobs:
       - name: Dependencias
         run: |
           python3 -m pip install --upgrade pip
-          # faster-whisper importa `requests` para bajar el modelo: sin él el job
-          # moría con ModuleNotFoundError después de descargar el audio.
-          python3 -m pip install faster-whisper==1.2.0 requests==2.32.3
+          # `requests`: faster-whisper lo importa para bajar el modelo.
+          # `av` 14: faster-whisper llama av.open(..., metadata_errors="ignore") y
+          # esa opción no existe en las versiones antiguas que resuelve pip solo.
+          python3 -m pip install faster-whisper==1.2.0 requests==2.32.3 av==14.4.0
           sudo apt-get update -qq
           sudo apt-get install -y -qq ffmpeg
 
