@@ -162,6 +162,21 @@ class FullRunTest(unittest.TestCase):
         self.assertEqual(payload['text'], 'hola mundo')
         self.assertEqual(payload['job'], 'video')
 
+    def test_documento_sin_texto_no_dice_sin_voz(self):
+        """El aviso tiene que hablar del archivo que llegó, no de voz."""
+        module = load_module('media_pdf_sin_texto')
+        module.check_url = lambda url: url
+        module.download = lambda url, directory: os.path.join(directory, 'a.pdf')
+        module.pdf_to_markdown = lambda path: ('', 'docling, 0 páginas')
+
+        os.environ.update({'MEDIA_URL': f'{self.base}/a.pdf', 'RESULT_URL': f'{self.base}/result',
+                           'USER_ID': 'u-1', 'JOB': 'documents', 'FILENAME': 'escaneo.pdf'})
+        codigo = module.main()
+
+        self.assertEqual(codigo, 0)
+        payload = json.loads(self.recibido[0])
+        self.assertIn('sin texto extraíble', payload['text'])
+        self.assertNotIn('voz', payload['text'])
 
 if __name__ == "__main__":
     unittest.main()

@@ -184,7 +184,10 @@ def main() -> int:
             # terminaba en exit 3 y el usuario no sabía nada. Se devuelve el
             # resultado con la nota real; el archivo .texto.txt lo explica.
             print("media: la extracción no produjo texto; se devuelve la nota", file=sys.stderr)
-            text = "(sin voz detectada en el archivo)"
+            # El texto tiene que hablar del archivo que llegó: a un PDF escaneado
+            # decirle «sin voz» sería mentir.
+            text = ("(sin texto extraíble: el documento parece escaneado o sin capa de texto)"
+                    if job == "documents" else "(sin voz detectada en el archivo)")
             note = f"{note}; no se detectaron segmentos de voz" if note else "no se detectaron segmentos de voz"
         deliver(result_url, {
             "userId": user_id, "filename": filename, "job": job,
