@@ -87,8 +87,14 @@ def download(url: str, directory: str) -> str:
         die(f"media: la descarga falló en {host} con HTTP {error.code}: {detail}", 3)
 
 
+USER_AGENT = "VeritasBatch/1.0 (+https://github.com/auronsanchez19-netizen/veritas-batch)"
+
+
 def _fetch(url: str, directory: str) -> str:
-    with urllib.request.urlopen(url, timeout=120) as response:
+    # Cloudflare (error 1010) bloquea el User-Agent por defecto de urllib: se
+    # identifica el runner con un UA propio y estable.
+    request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, "Accept": "*/*"})
+    with urllib.request.urlopen(request, timeout=120) as response:
         length = int(response.headers.get("Content-Length") or 0)
         if length > MAX_BYTES:
             die(f"media: el fichero declara {length} bytes; el tope es {MAX_BYTES}")
