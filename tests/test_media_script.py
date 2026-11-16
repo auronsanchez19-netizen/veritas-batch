@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Pruebas del runner sin red ni dependencias pesadas."""
+import json
 import os
 import subprocess
 import sys
@@ -37,6 +38,95 @@ class MediaScriptTest(unittest.TestCase):
                       "USER_ID": "u-1", "JOB": "audio"})
         self.assertEqual(result.returncode, 2)
         self.assertIn("credenciales", result.stderr)
+
+
+class FullRunTest(unittest.TestCase):
+    """El camino completo: descarga, transcripción y devolución al Worker.
+
+    Hasta ahora las pruebas cubrían la descarga y las validaciones; el resto se
+    estrenaba en vivo, y ahí aparecieron los fallos de `requests`, `av` y del
+    propio nombre `local`. Aquí se ejecuta `main()` de punta a punta con la
+    transcripción sustituida por un doble: lo que se prueba es el encadenado
+    (variables, descarga, texto, POST de vuelta y código de salida).
+    """
+
+    def setUp(self):
+        import functools
+        import http.server
+        import threading
+        self.recibido = []
+        recibido = self.recibido
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                self.send_response(200)
+                self.send_header('Content-Type', 'audio/wav')
+                self.send_header('Content-Length', '4100')
+                self.end_headers()
+                self.wfile.write(b'RIFF' + b'\x00' * 4096)
+            def do_POST(self):
+                import traceback
+                try:
+                    self._post()
+                except Exception:
+                    traceback.print_exc()
+                    self.send_error(500)
+
+            def _post(self):
+                length = int(self.headers.get('Content-Length') or 0)
+                self.server.recibido.append(self.rfile.read(length))
+                body = b'{"ok":true,"file":"a.wav.texto.txt","chars":17}'
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json')
+                self.send_header('Content-Length', str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+            def log_message(self, *args):
+                pass
+        self.server = http.server.ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+        self.server.recibido = recibido
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+        self.base = f'http://127.0.0.1:{self.server.server_address[1]}'
+
+    def tearDown(self):
+        self.server.shutdown()
+        self.server.server_close()
+        for key in ('MEDIA_URL', 'RESULT_URL', 'USER_ID', 'JOB', 'FILENAME', 'MODEL'):
+            os.environ.pop(key, None)
+
+    def test_corrida_completa_devuelve_el_texto(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location('media_full', SCRIPT)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        module.check_url = lambda url: url  # servidor local: se salta el guardián de red
+        module.transcribe = lambda path, model, language: ('en Cuba hubo apagones.', 'idioma es (0.99), 7.0 s de audio')
+
+        os.environ.update({'MEDIA_URL': f'{self.base}/a.wav', 'RESULT_URL': f'{self.base}/result',
+                           'USER_ID': 'u-1', 'JOB': 'audio', 'FILENAME': 'a.wav', 'MODEL': 'small'})
+        codigo = module.main()
+
+        self.assertEqual(codigo, 0)
+        self.assertEqual(len(self.recibido), 1, 'debe hacer exactamente una devolución')
+        payload = json.loads(self.recibido[0])
+        self.assertEqual(payload['text'], 'en Cuba hubo apagones.')
+        self.assertEqual(payload['filename'], 'a.wav')
+        self.assertEqual(payload['userId'], 'u-1')
+        self.assertIn('7.0 s', payload['note'])
+
+    def test_sin_texto_no_devuelve_nada_y_sale_con_3(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location('media_vacio', SCRIPT)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        module.check_url = lambda url: url
+        module.transcribe = lambda path, model, language: ('   ', 'idioma es (0.10), 1.0 s de audio')
+
+        os.environ.update({'MEDIA_URL': f'{self.base}/a.wav', 'RESULT_URL': f'{self.base}/result',
+                           'USER_ID': 'u-1', 'JOB': 'audio', 'FILENAME': 'a.wav'})
+        codigo = module.main()
+
+        self.assertEqual(codigo, 3)
+        self.assertEqual(self.recibido, [], 'un texto vacío no debe guardarse como si fuera una transcripción')
 
 
 if __name__ == "__main__":
